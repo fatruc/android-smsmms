@@ -1,5 +1,15 @@
 package com.klinker.android.send_message;
 
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import android.accounts.Account;
 import android.accounts.AccountManager;
 import android.accounts.AuthenticatorException;
@@ -12,18 +22,9 @@ import android.os.Bundle;
 import android.telephony.SmsMessage;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
-import android.util.Log;
-import com.google.android.mms.util_alt.SqliteWrapper;
 
-import java.io.IOException;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.HashSet;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import com.android.mms.transaction.TransactionSettings;
+import com.google.android.mms.util_alt.SqliteWrapper;
 
 /**
  * Common methods to be used for data connectivity/sending messages ect
@@ -156,35 +157,28 @@ public class Utils {
      * @param proxy   is the proxy of the APN to check
      * @throws java.io.IOException when route cannot be established
      */
-    public static void ensureRouteToHost(Context context, String url, String proxy) throws IOException {
-        ConnectivityManager connMgr =
-                (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        connMgr.startUsingNetworkFeature(ConnectivityManager.TYPE_MOBILE, "enableMMS");
-
-        Log.v("sending_mms_library", "ensuring route to host");
-
-        int inetAddr;
-        if (proxy != null && !proxy.equals("")) {
-            String proxyAddr = proxy;
-            inetAddr = lookupHost(proxyAddr);
-            if (inetAddr == -1) {
-                throw new IOException("Cannot establish route for " + url + ": Unknown host");
-            } else {
-                if (!connMgr.requestRouteToHost(
-                        ConnectivityManager.TYPE_MOBILE_MMS, inetAddr)) {
-                    throw new IOException("Cannot establish route to proxy " + inetAddr);
-                }
+    public static void ensureRouteToHost(String url, TransactionSettings settings, ConnectivityManager connectivityManager) throws IOException {
+        InetAddress inetAddr;
+        if (settings.isProxySet()) {
+            String proxyAddr = settings.getProxyAddress();
+            try {
+              inetAddr = InetAddress.getByName(proxyAddr);
+            } catch (UnknownHostException e) {
+                throw new IOException("Cannot establish route for " + url +
+                                      ": Unknown proxy " + proxyAddr);
+            }
+            if (!connectivityManager.requestRouteToHostAddress(ConnectivityManager.TYPE_MOBILE_MMS, inetAddr)) {
+                throw new IOException("Cannot establish route to proxy " + inetAddr);
             }
         } else {
             Uri uri = Uri.parse(url);
-            inetAddr = lookupHost(uri.getHost());
-            if (inetAddr == -1) {
+            try {
+                inetAddr = InetAddress.getByName(uri.getHost());
+            } catch (UnknownHostException e) {
                 throw new IOException("Cannot establish route for " + url + ": Unknown host");
-            } else {
-                if (!connMgr.requestRouteToHost(
-                        ConnectivityManager.TYPE_MOBILE_MMS, inetAddr)) {
-                    throw new IOException("Cannot establish route to " + inetAddr + " for " + url);
-                }
+            }
+            if (!connectivityManager.requestRouteToHostAddress(ConnectivityManager.TYPE_MOBILE_MMS, inetAddr)) {
+                throw new IOException("Cannot establish route to " + inetAddr + " for " + url);
             }
         }
     }

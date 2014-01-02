@@ -27,7 +27,6 @@ import java.util.Calendar;
 import java.util.HashSet;
 import java.util.Set;
 
-import android.app.Activity;
 import android.app.PendingIntent;
 import android.content.ContentValues;
 import android.content.Context;
@@ -41,7 +40,6 @@ import android.provider.Telephony;
 import android.telephony.SmsManager;
 import android.telephony.SmsMessage;
 import android.util.Log;
-import android.widget.Toast;
 
 import com.android.mms.dom.smil.parser.SmilXmlSerializer;
 import com.android.mms.transaction.HttpUtils;
@@ -180,39 +178,18 @@ public class Transaction {
                     dPI.add(settings.getDeliveryReports() && saveMessage ? deliveredPI : null);
                 }
 
-                for (int j = 0; j < addresses.length; j++) {
+                for (int j = 0; j < addresses.length; j++)
                     smsManager.sendMultipartTextMessage(addresses[j], null, parts, sPI, dPI);
-                }
             }
         } else {
             // send the message normally without forcing anything to be split
             ArrayList<String> parts = smsManager.divideMessage(body);
-
             for (int i = 0; i < parts.size(); i++) {
                 sPI.add(saveMessage ? sentPI : null);
                 dPI.add(settings.getDeliveryReports() && saveMessage ? deliveredPI : null);
             }
-
-            try {
-                for (int i = 0; i < addresses.length; i++) {
-                    smsManager.sendMultipartTextMessage(addresses[i], null, parts, sPI, dPI);
-                }
-            } catch (Exception e) {
-                // whoops...
-                e.printStackTrace();
-
-                try {
-                    ((Activity) context).getWindow().getDecorView().findViewById(android.R.id.content).post(new Runnable() {
-
-                        @Override
-                        public void run() {
-                            Toast.makeText(context, "Message could not be sent", Toast.LENGTH_LONG).show();
-                        }
-                    });
-                } catch (Exception f) {
-
-                }
-            }
+            for (int i = 0; i < addresses.length; i++)
+                smsManager.sendMultipartTextMessage(addresses[i], null, parts, sPI, dPI);
         }
 
         if (saveMessage) {
@@ -405,7 +382,7 @@ public class Transaction {
     	ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
 		NetworkInfo info = connectivityManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE_MMS);
 		TransactionSettings settings = new TransactionSettings(context, info.getExtraInfo());
-    	Utils.ensureRouteToHost(context, settings.getMmscUrl(), settings.getProxyAddress());
+    	Utils.ensureRouteToHost(settings.getMmscUrl(), settings, connectivityManager);
         HttpUtils.httpConnection(context, 4444L, settings.getMmscUrl(), bytesToSend, HttpUtils.HTTP_GET_METHOD, settings.isProxySet(), settings.getProxyAddress(), settings.getProxyPort());
     }
 
