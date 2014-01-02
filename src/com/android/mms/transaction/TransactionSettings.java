@@ -18,10 +18,17 @@
 package com.android.mms.transaction;
 
 import android.content.Context;
-import android.net.NetworkUtils;
+import android.database.Cursor;
+import android.provider.Telephony;
 import android.text.TextUtils;
 import android.util.Log;
-import com.klinker.android.send_message.Transaction;
+
+import com.google.android.mms.util_alt.SqliteWrapper;
+// TDH
+//import com.android.internal.telephony.Phone;
+// TDH
+//import android.net.NetworkUtils;
+import com.klinker.android.send_message.BuildConfig;
 
 /**
  * Container of transaction settings. Instances of this class are contained
@@ -30,23 +37,25 @@ import com.klinker.android.send_message.Transaction;
  */
 public class TransactionSettings {
     private static final String TAG = "TransactionSettings";
-    private static final boolean DEBUG = true;
-    private static final boolean LOCAL_LOGV = false;
 
     private String mServiceCenter;
     private String mProxyAddress;
     private int mProxyPort = -1;
 
     private static final String[] APN_PROJECTION = {
-            "type",            // 0
-            "mmsc",            // 1
-            "mmsproxy",        // 2
-            "mmsport"          // 3
+            Telephony.Carriers.TYPE,            // 0
+            Telephony.Carriers.MMSC,            // 1
+            Telephony.Carriers.MMSPROXY,        // 2
+            Telephony.Carriers.MMSPORT          // 3
     };
     private static final int COLUMN_TYPE         = 0;
     private static final int COLUMN_MMSC         = 1;
     private static final int COLUMN_MMSPROXY     = 2;
     private static final int COLUMN_MMSPORT      = 3;
+    
+	// TDH
+    static final String APN_TYPE_ALL = "*";
+    static final String APN_TYPE_MMS = "mms";
 
     /**
      * Constructor that uses the default settings of the MMS Client.
@@ -54,76 +63,63 @@ public class TransactionSettings {
      * @param context The context of the MMS Client
      */
     public TransactionSettings(Context context, String apnName) {
+        if (BuildConfig.DEBUG) {
             Log.v(TAG, "TransactionSettings: apnName: " + apnName);
-//        String selection = "current" + " IS NOT NULL";
-//        String[] selectionArgs = null;
-//        if (!TextUtils.isEmpty(apnName)) {
-//            selection += " AND " + "apn" + "=?";
-//            selectionArgs = new String[]{ apnName.trim() };
-//        }
-//
-//        Cursor cursor;
-//
-//        try {
-//            cursor = SqliteWrapper.query(context, context.getContentResolver(),
-//                                Telephony.Carriers.CONTENT_URI,
-//                                APN_PROJECTION, selection, selectionArgs, null);
-//
-//                Log.v(TAG, "TransactionSettings looking for apn: " + selection + " returned: " +
-//                        (cursor == null ? "null cursor" : (cursor.getCount() + " hits")));
-//        } catch (SecurityException e) {
-//            e.printStackTrace();
-//            cursor = null;
-//        }
-//
-//        if (cursor == null) {
-//            Log.e(TAG, "Apn is not found in Database!");
-            mServiceCenter = NetworkUtils.trimV4AddrZeros(Transaction.settings.getMmsc());
-            mProxyAddress = NetworkUtils.trimV4AddrZeros(Transaction.settings.getProxy());
+        }
+        String selection = Telephony.Carriers.CURRENT + " IS NOT NULL";
+        String[] selectionArgs = null;
+        if (!TextUtils.isEmpty(apnName)) {
+            selection += " AND " + Telephony.Carriers.APN + "=?";
+            selectionArgs = new String[]{ apnName.trim() };
+        }
 
-            if (isProxySet()) {
-                mProxyPort = Integer.parseInt(Transaction.settings.getPort());
+        Cursor cursor = SqliteWrapper.query(context, context.getContentResolver(),
+                            Telephony.Carriers.CONTENT_URI,
+                            APN_PROJECTION, selection, selectionArgs, null);
+
+        if (BuildConfig.DEBUG) {
+            Log.v(TAG, "TransactionSettings looking for apn: " + selection + " returned: " +
+                    (cursor ==null ? "null cursor" : (cursor.getCount() + " hits")));
+        }
+
+        if (cursor == null) {
+            Log.e(TAG, "Apn is not found in Database!");
+            return;
+        }
+
+        boolean sawValidApn = false;
+        try {
+            while (cursor.moveToNext() && TextUtils.isEmpty(mServiceCenter)) {
+                // Read values from APN settings
+                if (isValidApnType(cursor.getString(COLUMN_TYPE), APN_TYPE_MMS)) {
+                    sawValidApn = true;
+                    mServiceCenter = trimV4AddrZeros(
+                            cursor.getString(COLUMN_MMSC).trim());
+                    mProxyAddress = trimV4AddrZeros(
+                            cursor.getString(COLUMN_MMSPROXY));
+                    if (isProxySet()) {
+                        String portString = cursor.getString(COLUMN_MMSPORT);
+                        try {
+                            mProxyPort = Integer.parseInt(portString);
+                        } catch (NumberFormatException e) {
+                            if (TextUtils.isEmpty(portString)) {
+                                Log.w(TAG, "mms port not set!");
+                            } else {
+                                Log.e(TAG, "Bad port number format: " + portString, e);
+                            }
+                        }
+                    }
+                }
             }
-//        }
+        } finally {
+            cursor.close();
+        }
 
-//        boolean sawValidApn = false;
-//        try {
-//            while (cursor.moveToNext() && TextUtils.isEmpty(mServiceCenter)) {
-//                // Read values from APN settings
-//                if (isValidApnType(cursor.getString(COLUMN_TYPE), "mms")) {
-//                    sawValidApn = true;
-//
-//                    String mmsc = cursor.getString(COLUMN_MMSC);
-//                    if (mmsc == null) {
-//                        continue;
-//                    }
-//
-//                    mServiceCenter = NetworkUtils.trimV4AddrZeros(mmsc.trim());
-//                    mProxyAddress = NetworkUtils.trimV4AddrZeros(
-//                            cursor.getString(COLUMN_MMSPROXY));
-//                    if (isProxySet()) {
-//                        String portString = cursor.getString(COLUMN_MMSPORT);
-//                        try {
-//                            mProxyPort = Integer.parseInt(portString);
-//                        } catch (NumberFormatException e) {
-//                            if (TextUtils.isEmpty(portString)) {
-//                                Log.w(TAG, "mms port not set!");
-//                            } else {
-//                                Log.e(TAG, "Bad port number format: " + portString, e);
-//                            }
-//                        }
-//                    }
-//                }
-//            }
-//        } finally {
-//            cursor.close();
-//        }
-//
-//        Log.v(TAG, "APN setting: MMSC: " + mServiceCenter + " looked for: " + selection);
-//
-//        if (sawValidApn && TextUtils.isEmpty(mServiceCenter)) {
-//            Log.e(TAG, "Invalid APN setting: MMSC is empty");
-//        }
+        Log.v(TAG, "APN setting: MMSC: " + mServiceCenter + " looked for: " + selection);
+
+        if (sawValidApn && TextUtils.isEmpty(mServiceCenter)) {
+            Log.e(TAG, "Invalid APN setting: MMSC is empty");
+        }
     }
 
     /**
@@ -140,9 +136,11 @@ public class TransactionSettings {
         mProxyAddress = proxyAddr;
         mProxyPort = proxyPort;
 
+        if (BuildConfig.DEBUG) {
             Log.v(TAG, "TransactionSettings: " + mServiceCenter +
                     " proxyAddress: " + mProxyAddress +
                     " proxyPort: " + mProxyPort);
+        }
    }
 
     public String getMmscUrl() {
@@ -168,10 +166,31 @@ public class TransactionSettings {
         }
 
         for (String t : types.split(",")) {
-            if (t.equals(requestType) || t.equals("*")) {
+            if (t.equals(requestType) || t.equals(APN_TYPE_ALL)) {
                 return true;
             }
         }
         return false;
     }
+    
+	// TDH
+    public static String trimV4AddrZeros(String addr) {
+        if (addr == null) return null;
+        String[] octets = addr.split("\\.");
+        if (octets.length != 4) return addr;
+        StringBuilder builder = new StringBuilder(16);
+        String result = null;
+        for (int i = 0; i < 4; i++) {
+            try {
+                if (octets[i].length() > 3) return addr;
+                builder.append(Integer.parseInt(octets[i]));
+            } catch (NumberFormatException e) {
+                return addr;
+            }
+            if (i < 3) builder.append('.');
+        }
+        result = builder.toString();
+        return result;
+    }
+
 }

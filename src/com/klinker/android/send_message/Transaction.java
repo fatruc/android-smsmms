@@ -16,47 +16,46 @@
 
 package com.klinker.android.send_message;
 
-import android.app.Activity;
-import android.app.PendingIntent;
-import android.content.*;
-import android.database.Cursor;
-import android.graphics.Bitmap;
-import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
-import android.net.Uri;
-import android.net.wifi.WifiManager;
-import android.os.Handler;
-import android.os.Looper;
-import android.provider.Telephony;
-import android.telephony.PhoneNumberUtils;
-import android.telephony.SmsManager;
-import android.telephony.SmsMessage;
-import android.telephony.TelephonyManager;
-import android.text.TextUtils;
-import android.util.Log;
-import android.widget.Toast;
-import com.android.mms.dom.smil.parser.SmilXmlSerializer;
-import com.android.mms.transaction.HttpUtils;
-import com.android.mms.transaction.MmsMessageSender;
-import com.android.mms.transaction.ProgressCallbackEntity;
-import com.android.mms.util.DownloadManager;
-import com.android.mms.util.RateController;
-import com.google.android.mms.APN;
-import com.google.android.mms.APNHelper;
-import com.google.android.mms.ContentType;
-import com.google.android.mms.MMSPart;
-import com.google.android.mms.pdu_alt.*;
-import com.google.android.mms.smil.SmilHelper;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.koushikdutta.ion.Ion;
-
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.util.*;
-import java.util.concurrent.ExecutionException;
+import java.net.SocketException;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Calendar;
+import java.util.HashSet;
+import java.util.Set;
+
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.ContentValues;
+import android.content.Context;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
+import android.net.Uri;
+import android.os.Looper;
+import android.provider.Telephony;
+import android.telephony.SmsManager;
+import android.telephony.SmsMessage;
+import android.util.Log;
+import android.widget.Toast;
+
+import com.android.mms.dom.smil.parser.SmilXmlSerializer;
+import com.android.mms.transaction.HttpUtils;
+import com.android.mms.transaction.TransactionSettings;
+import com.google.android.mms.ContentType;
+import com.google.android.mms.MMSPart;
+import com.google.android.mms.pdu_alt.CharacterSets;
+import com.google.android.mms.pdu_alt.EncodedStringValue;
+import com.google.android.mms.pdu_alt.PduBody;
+import com.google.android.mms.pdu_alt.PduComposer;
+import com.google.android.mms.pdu_alt.PduPart;
+import com.google.android.mms.pdu_alt.PduPersister;
+import com.google.android.mms.pdu_alt.SendReq;
+import com.google.android.mms.smil.SmilHelper;
 
 /**
  * Class to process transaction requests for sending
@@ -65,23 +64,12 @@ import java.util.concurrent.ExecutionException;
  */
 public class Transaction {
 
-    public static Settings settings;
+    private Settings settings;
     private Context context;
-    private ConnectivityManager mConnMgr;
-
     private boolean saveMessage = true;
 
     public String SMS_SENT = ".SMS_SENT";
     public String SMS_DELIVERED = ".SMS_DELIVERED";
-
-    public static String NOTIFY_SMS_FAILURE = ".NOTIFY_SMS_FAILURE";
-    public static final String MMS_ERROR = "com.klinker.android.send_message.MMS_ERROR";
-    public static final String REFRESH = "com.klinker.android.send_message.REFRESH";
-    public static final String MMS_PROGRESS = "com.klinker.android.send_message.MMS_PROGRESS";
-    public static final String VOICE_FAILED = "com.klinker.android.send_message.VOICE_FAILED";
-    public static final String VOICE_TOKEN = "com.klinker.android.send_message.RNRSE";
-    public static final String NOTIFY_OF_DELIVERY = "com.klinker.android.send_message.NOTIFY_DELIVERY";
-    public static final String NOTIFY_OF_MMS = "com.klinker.android.messaging.NEW_MMS_DOWNLOADED";
 
     public static final long NO_THREAD_ID = 0;
 
@@ -107,9 +95,6 @@ public class Transaction {
         SMS_SENT = context.getPackageName() + SMS_SENT;
         SMS_DELIVERED = context.getPackageName() + SMS_DELIVERED;
 
-        if (NOTIFY_SMS_FAILURE.equals(".NOTIFY_SMS_FAILURE")) {
-            NOTIFY_SMS_FAILURE = context.getPackageName() + NOTIFY_SMS_FAILURE;
-        }
     }
 
     /**
@@ -118,8 +103,10 @@ public class Transaction {
      *
      * @param message  is the message that you want to send
      * @param threadId is the thread id of who to send the message to (can also be set to Transaction.NO_THREAD_ID)
+     * @throws IOException 
+     * @throws SocketException 
      */
-    public void sendNewMessage(Message message, long threadId) {
+    public void sendNewMessage(Message message, long threadId) throws SocketException, IOException {
         this.saveMessage = message.getSave();
 
         // if message:
@@ -135,19 +122,10 @@ public class Transaction {
         // then, send as MMS, else send as Voice or SMS
         if (checkMMS(message)) {
             try { Looper.prepare(); } catch (Exception e) { }
-            RateController.init(context);
-            DownloadManager.init(context);
             sendMmsMessage(message.getText(), message.getAddresses(), message.getImages(), message.getMedia(), message.getMediaMimeType(), message.getSubject());
         } else {
-            if (message.getType() == Message.TYPE_VOICE) {
-                sendVoiceMessage(message.getText(), message.getAddresses(), threadId);
-            } else if (message.getType() == Message.TYPE_SMSMMS) {
-                sendSmsMessage(message.getText(), message.getAddresses(), threadId);
-            } else {
-                Log.v("send_transaction", "error with message type, aborting...");
-            }
+            sendSmsMessage(message.getText(), message.getAddresses(), threadId);
         }
-
     }
 
     private void sendSmsMessage(String text, String[] addresses, long threadId) {
@@ -263,7 +241,7 @@ public class Transaction {
         }
     }
 
-    private void sendMmsMessage(String text, String[] addresses, Bitmap[] image, byte[] media, String mimeType, String subject) {
+    private void sendMmsMessage(String text, String[] addresses, Bitmap[] image, byte[] media, String mimeType, String subject) throws SocketException, IOException {
         // merge the string[] of addresses into a single string so they can be inserted into the database easier
         String address = "";
 
@@ -307,46 +285,7 @@ public class Transaction {
         }
 
         MessageInfo info = getBytes(address.split(" "), data.toArray(new MMSPart[data.size()]), subject);
-
-        try {
-            MmsMessageSender sender = new MmsMessageSender(context, info.location, info.bytes.length);
-            sender.sendMessage(4444L);
-
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(ProgressCallbackEntity.PROGRESS_STATUS_ACTION);
-            BroadcastReceiver receiver = new BroadcastReceiver() {
-
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    int progress = intent.getIntExtra("progress", -3);
-                    Log.v("sending_mms_library", "progress: " + progress);
-
-                    // send progress broadcast to update ui if desired...
-                    Intent progressIntent = new Intent(MMS_PROGRESS);
-                    progressIntent.putExtra("progress", progress);
-                    context.sendBroadcast(progressIntent);
-
-                    if (progress == ProgressCallbackEntity.PROGRESS_COMPLETE) {
-                        context.sendBroadcast(new Intent(REFRESH));
-                        context.unregisterReceiver(this);
-                    } else if (progress == ProgressCallbackEntity.PROGRESS_ABORT) {
-                        // This seems to get called only after the progress has reached 100 and then something else goes wrong, so here we will try and send again and see if it works
-                        Log.v("sending_mms_library", "sending aborted for some reason...");
-                    }
-                }
-
-            };
-
-            context.registerReceiver(receiver, filter);
-        } catch (Exception e) {
-            e.printStackTrace();
-            // insert the pdu into the database and return the bytes to send
-            if (settings.getWifiMmsFix()) {
-                sendMMS(info.bytes);
-            } else {
-                sendMMSWiFi(info.bytes);
-            }
-        }
+        sendData(info.bytes);
     }
 
     private MessageInfo getBytes(String[] recipients, MMSPart[] parts, String subject) {
@@ -438,35 +377,6 @@ public class Transaction {
         public byte[] bytes;
     }
 
-    private void sendVoiceMessage(String text, String[] addresses, long threadId) {
-        // send a voice message to each recipient based off of koush's voice implementation in Voice+
-        for (int i = 0; i < addresses.length; i++) {
-            if (saveMessage) {
-                Calendar cal = Calendar.getInstance();
-                ContentValues values = new ContentValues();
-                values.put("address", addresses[i]);
-                values.put("body", text);
-                values.put("date", cal.getTimeInMillis() + "");
-                values.put("read", 1);
-                values.put("status", 2);   // if you want to be able to tell the difference between sms and voice, look for this value. SMS will be -1, 0, 64, 128 and voice will be 2
-
-                // attempt to create correct thread id if one is not supplied
-                if (threadId == NO_THREAD_ID || addresses.length > 1) {
-                    threadId = Utils.getOrCreateThreadId(context, addresses[i]);
-                }
-
-                values.put("thread_id", threadId);
-                context.getContentResolver().insert(Uri.parse("content://sms/outbox"), values);
-            }
-
-            if (!settings.getSignature().equals("")) {
-                text += "\n" + settings.getSignature();
-            }
-
-            sendVoiceMessage(addresses[i], text);
-        }
-    }
-
     // splits text and adds split counter when applicable
     private String[] splitByLength(String s, int chunkSize, boolean counter) {
         int arraySize = (int) Math.ceil((double) s.length() / chunkSize);
@@ -491,482 +401,12 @@ public class Transaction {
         return returnArray;
     }
 
-    private boolean alreadySending = false;
-
-    private void sendMMS(final byte[] bytesToSend) {
-        revokeWifi(true);
-
-        // enable mms connection to mobile data
-        mConnMgr = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        int result = beginMmsConnectivity();
-
-        Log.v("sending_mms_library", "result of connectivity: " + result + " ");
-
-        if (result != 0) {
-            // if mms feature is not already running (most likely isn't...) then register a receiver and wait for it to be active
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
-            final BroadcastReceiver receiver = new BroadcastReceiver() {
-
-                @Override
-                public void onReceive(Context context1, Intent intent) {
-                    String action = intent.getAction();
-
-                    if (!action.equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
-                        return;
-                    }
-
-                    @SuppressWarnings("deprecation")
-                    NetworkInfo mNetworkInfo = intent.getParcelableExtra(ConnectivityManager.EXTRA_NETWORK_INFO);
-
-                    if ((mNetworkInfo == null) || (mNetworkInfo.getType() != ConnectivityManager.TYPE_MOBILE)) {
-                        return;
-                    }
-
-                    if (!mNetworkInfo.isConnected()) {
-                        return;
-                    } else {
-                        // ready to send the message now
-                        Log.v("sending_mms_library", "sending through broadcast receiver");
-                        alreadySending = true;
-                        sendData(bytesToSend);
-
-                        context.unregisterReceiver(this);
-                    }
-
-                }
-
-            };
-
-            context.registerReceiver(receiver, filter);
-
-            try {
-                Looper.prepare();
-            } catch (Exception e) {
-                // Already on UI thread probably
-            }
-
-            // try sending after 3 seconds anyways if for some reason the receiver doesn't work
-            new Handler().postDelayed(new Runnable() {
-                @Override
-                public void run() {
-                    if (!alreadySending) {
-                        try {
-                            Log.v("sending_mms_library", "sending through handler");
-                            context.unregisterReceiver(receiver);
-                        } catch (Exception e) {
-
-                        }
-
-                        sendData(bytesToSend);
-                    }
-                }
-            }, 7000);
-        } else {
-            // mms connection already active, so send the message
-            Log.v("sending_mms_library", "sending right away, already ready");
-            sendData(bytesToSend);
-        }
-    }
-
-    private void sendMMSWiFi(final byte[] bytesToSend) {
-        // enable mms connection to mobile data
-        mConnMgr = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
-        NetworkInfo.State state = mConnMgr.getNetworkInfo(ConnectivityManager.TYPE_MOBILE_MMS).getState();
-
-        if ((0 == state.compareTo(NetworkInfo.State.CONNECTED) || 0 == state.compareTo(NetworkInfo.State.CONNECTING))) {
-            sendData(bytesToSend);
-        } else {
-            int resultInt = mConnMgr.startUsingNetworkFeature(ConnectivityManager.TYPE_MOBILE, "enableMMS");
-
-            if (resultInt == 0) {
-                try {
-                    Utils.ensureRouteToHost(context, settings.getMmsc(), settings.getProxy());
-                    sendData(bytesToSend);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    sendData(bytesToSend);
-                }
-            } else {
-                // if mms feature is not already running (most likely isn't...) then register a receiver and wait for it to be active
-                IntentFilter filter = new IntentFilter();
-                filter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
-                final BroadcastReceiver receiver = new BroadcastReceiver() {
-
-                    @Override
-                    public void onReceive(Context context1, Intent intent) {
-                        String action = intent.getAction();
-
-                        if (!action.equals(ConnectivityManager.CONNECTIVITY_ACTION)) {
-                            return;
-                        }
-
-                        NetworkInfo mNetworkInfo = mConnMgr.getActiveNetworkInfo();
-                        if ((mNetworkInfo == null) || (mNetworkInfo.getType() != ConnectivityManager.TYPE_MOBILE_MMS)) {
-                            return;
-                        }
-
-                        if (!mNetworkInfo.isConnected()) {
-                            return;
-                        } else {
-                            alreadySending = true;
-
-                            try {
-                                Utils.ensureRouteToHost(context, settings.getMmsc(), settings.getProxy());
-                                sendData(bytesToSend);
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                                sendData(bytesToSend);
-                            }
-
-                            context.unregisterReceiver(this);
-                        }
-
-                    }
-
-                };
-
-                context.registerReceiver(receiver, filter);
-
-                try {
-                    Looper.prepare();
-                } catch (Exception e) {
-                    // Already on UI thread probably
-                }
-
-                // try sending after 3 seconds anyways if for some reason the receiver doesn't work
-                new Handler().postDelayed(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (!alreadySending) {
-                            try {
-                                context.unregisterReceiver(receiver);
-                            } catch (Exception e) {
-
-                            }
-
-                            try {
-                                Utils.ensureRouteToHost(context, settings.getMmsc(), settings.getProxy());
-                                sendData(bytesToSend);
-                            } catch (Exception e) {
-                                e.printStackTrace();
-                                sendData(bytesToSend);
-                            }
-                        }
-                    }
-                }, 7000);
-            }
-        }
-    }
-
-    private void sendData(final byte[] bytesToSend) {
-        // be sure this is running on new thread, not UI
-        Log.v("sending_mms_library", "starting new thread to send on");
-        new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-                List<APN> apns = new ArrayList<APN>();
-
-                try {
-                    APN apn = new APN(settings.getMmsc(), settings.getPort(), settings.getProxy());
-                    apns.add(apn);
-
-                    String mmscUrl = apns.get(0).MMSCenterUrl != null ? apns.get(0).MMSCenterUrl.trim() : null;
-                    apns.get(0).MMSCenterUrl = mmscUrl;
-
-                    if (apns.get(0).MMSCenterUrl.equals("")) {
-                        // attempt to get apns from internal databases, most likely will fail due to insignificant permissions
-                        APNHelper helper = new APNHelper(context);
-                        apns = helper.getMMSApns();
-                    }
-                } catch (Exception e) {
-                    // error in the apns, none are available most likely causing an index out of bounds
-                    // exception. cant send a message, so therefore mark as failed
-                    markMmsFailed();
-                    return;
-                }
-
-                try {
-                    // attempts to send the message using given apns
-                    Log.v("sending_mms_library", apns.get(0).MMSCenterUrl + " " + apns.get(0).MMSProxy + " " + apns.get(0).MMSPort);
-                    Log.v("sending_mms_libarry", "initial attempt at sending starting now");
-                    trySending(apns.get(0), bytesToSend, 0);
-                } catch (Exception e) {
-                    // some type of apn error, so notify user of failure
-                    Log.v("sending_mms_libary", "weird error, not sure how this could even be called other than apn stuff");
-                    markMmsFailed();
-                }
-
-            }
-
-        }).start();
-    }
-
-    public static final int NUM_RETRIES = 2;
-
-    private void trySending(final APN apns, final byte[] bytesToSend, final int numRetries) {
-        try {
-            IntentFilter filter = new IntentFilter();
-            filter.addAction(ProgressCallbackEntity.PROGRESS_STATUS_ACTION);
-            BroadcastReceiver receiver = new BroadcastReceiver() {
-
-                @Override
-                public void onReceive(Context context, Intent intent) {
-                    int progress = intent.getIntExtra("progress", -3);
-                    Log.v("sending_mms_library", "progress: " + progress);
-
-                    // send progress broadcast to update ui if desired...
-                    Intent progressIntent = new Intent(MMS_PROGRESS);
-                    progressIntent.putExtra("progress", progress);
-                    context.sendBroadcast(progressIntent);
-
-                    if (progress == ProgressCallbackEntity.PROGRESS_COMPLETE) {
-                        if (saveMessage) {
-                            Cursor query = context.getContentResolver().query(Uri.parse("content://mms"), new String[]{"_id"}, null, null, "date desc");
-                            query.moveToFirst();
-                            String id = query.getString(query.getColumnIndex("_id"));
-                            query.close();
-
-                            // move to the sent box
-                            ContentValues values = new ContentValues();
-                            values.put("msg_box", 2);
-                            String where = "_id" + " = '" + id + "'";
-                            context.getContentResolver().update(Uri.parse("content://mms"), values, where, null);
-                        }
-
-                        context.sendBroadcast(new Intent(REFRESH));
-                        context.unregisterReceiver(this);
-
-                        // give everything time to finish up, may help the abort being shown after the progress is already 100
-                        new Handler().postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                mConnMgr.stopUsingNetworkFeature(ConnectivityManager.TYPE_MOBILE_MMS, "enableMMS");
-                                if (settings.getWifiMmsFix()) {
-                                    reinstateWifi();
-                                }
-                            }
-                        }, 1000);
-                    } else if (progress == ProgressCallbackEntity.PROGRESS_ABORT) {
-                        // This seems to get called only after the progress has reached 100 and then something else goes wrong, so here we will try and send again and see if it works
-                        Log.v("sending_mms_library", "sending aborted for some reason...");
-                        context.unregisterReceiver(this);
-
-                        if (numRetries < NUM_RETRIES) {
-                            // sleep and try again in three seconds to see if that give wifi and mobile data a chance to toggle in time
-                            try {
-                                Thread.sleep(3000);
-                            } catch (Exception f) {
-
-                            }
-
-                            if (settings.getWifiMmsFix()) {
-                                sendMMS(bytesToSend);
-                            } else {
-                                sendMMSWiFi(bytesToSend);
-                            }
-                        } else {
-                            markMmsFailed();
-                        }
-                    }
-                }
-
-            };
-
-            context.registerReceiver(receiver, filter);
-
-            // This is where the actual post request is made to send the bytes we previously created through the given apns
-            Log.v("sending_mms_library", "attempt: " + numRetries);
-            Utils.ensureRouteToHost(context, apns.MMSCenterUrl, apns.MMSProxy);
-            HttpUtils.httpConnection(context, 4444L, apns.MMSCenterUrl, bytesToSend, HttpUtils.HTTP_POST_METHOD, !TextUtils.isEmpty(apns.MMSProxy), apns.MMSProxy, Integer.parseInt(apns.MMSPort));
-        } catch (IOException e) {
-            Log.v("sending_mms_library", "some type of error happened when actually sending maybe?");
-            e.printStackTrace();
-
-            if (numRetries < NUM_RETRIES) {
-                // sleep and try again in three seconds to see if that give wifi and mobile data a chance to toggle in time
-                try {
-                    Thread.sleep(3000);
-                } catch (Exception f) {
-
-                }
-
-                trySending(apns, bytesToSend, numRetries + 1);
-            } else {
-                markMmsFailed();
-            }
-        }
-    }
-
-    private void markMmsFailed() {
-        // if it still fails, then mark message as failed
-        if (settings.getWifiMmsFix()) {
-            reinstateWifi();
-        }
-
-        if (saveMessage) {
-            Cursor query = context.getContentResolver().query(Uri.parse("content://mms"), new String[]{"_id"}, null, null, "date desc");
-            query.moveToFirst();
-            String id = query.getString(query.getColumnIndex("_id"));
-            query.close();
-
-            // mark message as failed
-            ContentValues values = new ContentValues();
-            values.put("msg_box", 5);
-            String where = "_id" + " = '" + id + "'";
-            context.getContentResolver().update(Uri.parse("content://mms"), values, where, null);
-        }
-
-        ((Activity) context).getWindow().getDecorView().findViewById(android.R.id.content).post(new Runnable() {
-
-            @Override
-            public void run() {
-                context.sendBroadcast(new Intent(REFRESH));
-                context.sendBroadcast(new Intent(NOTIFY_SMS_FAILURE));
-
-                // broadcast that mms has failed and you can notify user from there if you would like
-                context.sendBroadcast(new Intent(MMS_ERROR));
-
-            }
-
-        });
-    }
-
-    private void sendVoiceMessage(final String destAddr, final String text) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                String rnrse = settings.getRnrSe();
-                String account = settings.getAccount();
-                String authToken;
-
-                try {
-                    authToken = Utils.getAuthToken(account, context);
-
-                    if (rnrse == null) {
-                        rnrse = fetchRnrSe(authToken, context);
-                    }
-                } catch (Exception e) {
-                    failVoice();
-                    return;
-                }
-
-                try {
-                    sendRnrSe(authToken, rnrse, destAddr, text);
-                    successVoice();
-                    return;
-                } catch (Exception e) {
-                }
-
-                try {
-                    // try again...
-                    rnrse = fetchRnrSe(authToken, context);
-                    sendRnrSe(authToken, rnrse, destAddr, text);
-                    successVoice();
-                } catch (Exception e) {
-                    failVoice();
-                }
-            }
-        }).start();
-    }
-
-    // hit the google voice api to send a text
-    private void sendRnrSe(String authToken, String rnrse, String number, String text) throws Exception {
-        JsonObject json = Ion.with(context)
-                .load("https://www.google.com/voice/sms/send/")
-                .setHeader("Authorization", "GoogleLogin auth=" + authToken)
-                .setBodyParameter("phoneNumber", number)
-                .setBodyParameter("sendErrorSms", "0")
-                .setBodyParameter("text", text)
-                .setBodyParameter("_rnr_se", rnrse)
-                .asJsonObject()
-                .get();
-
-        if (!json.get("ok").getAsBoolean())
-            throw new Exception(json.toString());
-    }
-
-    private void failVoice() {
-        if (saveMessage) {
-            Cursor query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-
-            // mark message as failed
-            if (query.moveToFirst()) {
-                String id = query.getString(query.getColumnIndex("_id"));
-                ContentValues values = new ContentValues();
-                values.put("type", "5");
-                values.put("read", true);
-                context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-            }
-
-            query.close();
-        }
-
-        context.sendBroadcast(new Intent(REFRESH));
-        context.sendBroadcast(new Intent(VOICE_FAILED));
-    }
-
-    private void successVoice() {
-        if (saveMessage) {
-            Cursor query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-
-            // mark message as sent successfully
-            if (query.moveToFirst()) {
-                String id = query.getString(query.getColumnIndex("_id"));
-                ContentValues values = new ContentValues();
-                values.put("type", "2");
-                values.put("read", true);
-                context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-            }
-
-            query.close();
-        }
-
-        context.sendBroadcast(new Intent(REFRESH));
-    }
-
-    private String fetchRnrSe(String authToken, Context context) throws ExecutionException, InterruptedException {
-        JsonObject userInfo = Ion.with(context)
-                .load("https://www.google.com/voice/request/user")
-                .setHeader("Authorization", "GoogleLogin auth=" + authToken)
-                .asJsonObject()
-                .get();
-
-        String rnrse = userInfo.get("r").getAsString();
-
-        try {
-            TelephonyManager tm = (TelephonyManager) context.getSystemService(Activity.TELEPHONY_SERVICE);
-            String number = tm.getLine1Number();
-            if (number != null) {
-                JsonObject phones = userInfo.getAsJsonObject("phones");
-                for (Map.Entry<String, JsonElement> entry : phones.entrySet()) {
-                    JsonObject phone = entry.getValue().getAsJsonObject();
-                    if (!PhoneNumberUtils.compare(number, phone.get("phoneNumber").getAsString()))
-                        continue;
-                    if (!phone.get("smsEnabled").getAsBoolean())
-                        break;
-
-                    Ion.with(context)
-                            .load("https://www.google.com/voice/settings/editForwardingSms/")
-                            .setHeader("Authorization", "GoogleLogin auth=" + authToken)
-                            .setBodyParameter("phoneId", entry.getKey())
-                            .setBodyParameter("enabled", "0")
-                            .setBodyParameter("_rnr_se", rnrse)
-                            .asJsonObject();
-                    break;
-                }
-            }
-        } catch (Exception e) {
-
-        }
-
-        // broadcast so you can save it to your shared prefs or something so that it doesn't need to be retrieved every time
-        Intent intent = new Intent(VOICE_TOKEN);
-        intent.putExtra("_rnr_se", rnrse);
-        context.sendBroadcast(intent);
-
-        return rnrse;
+    private void sendData(final byte[] bytesToSend) throws IOException, SocketException {
+    	ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+		NetworkInfo info = connectivityManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE_MMS);
+		TransactionSettings settings = new TransactionSettings(context, info.getExtraInfo());
+    	Utils.ensureRouteToHost(context, settings.getMmscUrl(), settings.getProxyAddress());
+        HttpUtils.httpConnection(context, 4444L, settings.getMmscUrl(), bytesToSend, HttpUtils.HTTP_GET_METHOD, settings.isProxySet(), settings.getProxyAddress(), settings.getProxyPort());
     }
 
     private Uri insert(String[] to, MMSPart[] parts, String subject) {
@@ -1100,56 +540,8 @@ public class Transaction {
     public boolean checkMMS(Message message) {
         return message.getImages().length != 0 ||
                 (message.getMedia().length != 0 && message.getMediaMimeType() != null) ||
-                (settings.getSendLongAsMms() && Utils.getNumPages(settings, message.getText()) > settings.getSendLongAsMmsAfter() && message.getType() != Message.TYPE_VOICE) ||
+                (settings.getSendLongAsMms() && Utils.getNumPages(settings, message.getText()) > settings.getSendLongAsMmsAfter()) ||
                 (message.getAddresses().length > 1 && settings.getGroup()) ||
                 message.getSubject() != null;
-    }
-
-    /**
-     * @deprecated
-     */
-    private void reinstateWifi() {
-        try {
-            context.unregisterReceiver(settings.discon);
-        } catch (Exception f) {
-
-        }
-
-        WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-        wifi.setWifiEnabled(false);
-        wifi.setWifiEnabled(settings.currentWifiState);
-        wifi.reconnect();
-        Utils.setMobileDataEnabled(context, settings.currentDataState);
-    }
-
-    /**
-     * @deprecated
-     */
-    private void revokeWifi(boolean saveState) {
-        WifiManager wifi = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
-
-        if (saveState) {
-            settings.currentWifi = wifi.getConnectionInfo();
-            settings.currentWifiState = wifi.isWifiEnabled();
-            wifi.disconnect();
-            settings.discon = new DisconnectWifi();
-            context.registerReceiver(settings.discon, new IntentFilter(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION));
-            settings.currentDataState = Utils.isMobileDataEnabled(context);
-            Utils.setMobileDataEnabled(context, true);
-        } else {
-            wifi.disconnect();
-            wifi.disconnect();
-            settings.discon = new DisconnectWifi();
-            context.registerReceiver(settings.discon, new IntentFilter(WifiManager.SUPPLICANT_STATE_CHANGED_ACTION));
-            Utils.setMobileDataEnabled(context, true);
-        }
-    }
-
-    /**
-     * @deprecated
-     */
-    private int beginMmsConnectivity() {
-        Log.v("sending_mms_library", "starting mms service");
-        return mConnMgr.startUsingNetworkFeature(ConnectivityManager.TYPE_MOBILE, "enableMMS");
     }
 }

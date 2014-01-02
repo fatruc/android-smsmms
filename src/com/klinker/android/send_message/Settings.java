@@ -16,7 +16,6 @@
 
 package com.klinker.android.send_message;
 
-import android.net.wifi.WifiInfo;
 
 /**
  * Class to house all of the settings that can be used to send a message
@@ -61,7 +60,6 @@ public class Settings {
         this.proxy = s.getProxy();
         this.port = s.getPort();
         this.group = s.getGroup();
-        this.wifiMmsFix = s.getWifiMmsFix();
         this.deliveryReports = s.getDeliveryReports();
         this.split = s.getSplit();
         this.splitCounter = s.getSplitCounter();
@@ -96,7 +94,6 @@ public class Settings {
         this.proxy = proxy;
         this.port = port;
         this.group = group;
-        this.wifiMmsFix = wifiMmsFix;
         this.deliveryReports = deliveryReports;
         this.split = split;
         this.splitCounter = splitCounter;
@@ -351,46 +348,5 @@ public class Settings {
      */
     public String getRnrSe() {
         return this.rnrSe;
-    }
-
-    /**
-     * @deprecated
-     */
-    private boolean wifiMmsFix;
-
-    /**
-     * @deprecated
-     */
-    public WifiInfo currentWifi;
-
-    /**
-     * @deprecated
-     */
-    public boolean currentWifiState;
-
-    /**
-     * @deprecated
-     */
-    public DisconnectWifi discon;
-
-    /**
-     * @deprecated
-     */
-    public boolean currentDataState;
-
-    /**
-     * @param wifiMmsFix is a boolean to toggle on and off wifi when sending MMS
-     * @deprecated Sets wifi mms fix
-     */
-    public void setWifiMmsFix(boolean wifiMmsFix) {
-        this.wifiMmsFix = wifiMmsFix;
-    }
-
-    /**
-     * @return whether or not to toggle wifi when sending MMS
-     * @deprecated
-     */
-    public boolean getWifiMmsFix() {
-        return this.wifiMmsFix;
     }
 }
