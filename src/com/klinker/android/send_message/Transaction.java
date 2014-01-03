@@ -88,7 +88,7 @@ public class Transaction {
 
 		long threadId = Utils.getOrCreateThreadId(mContext, address);
 		Uri smsOutboxUri = Sms.Outbox.addMessage(mContext.getContentResolver(), address, mSettings.getStripUnicode() ? StripAccents.stripAccents(text) : text, "", cal.getTimeInMillis(), mSettings.getDeliveryReports(), threadId);
-		
+
 		PendingIntent sentPI = PendingIntent.getBroadcast(mContext, 0, new Intent(SMS_SENT).putExtra(SMS_OUTBOX_URI, smsOutboxUri), 0);
 		PendingIntent deliveredPI = PendingIntent.getBroadcast(mContext, 0, new Intent(SMS_DELIVERED).putExtra(SMS_OUTBOX_URI, smsOutboxUri), 0);
 
@@ -103,14 +103,14 @@ public class Transaction {
 			text = mSettings.getPreText() + " " + text;
 
 		SmsManager smsManager = SmsManager.getDefault();
-	
+
 		ArrayList<String> parts = smsManager.divideMessage(text);
 
 		for (int j = 0; j < parts.size(); j++) {
 			sPI.add(sentPI);
 			dPI.add(mSettings.getDeliveryReports() ? deliveredPI : null);
 		}
-		
+
 		if (mSettings.getSplit()) {
 			for (String part : parts)
 				smsManager.sendTextMessage(address, null, part, sPI.get(0), dPI.get(0));
