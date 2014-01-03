@@ -1654,16 +1654,7 @@ public class PduParser {
                          * Inline = <Octet 130>
                          */
 
-                        /*
-                         * some carrier mmsc servers do not support content_disposition
-                         * field correctly
-                         */
-                        // TODO this should be dependant on the system but I don't know how to get that value
-//                        boolean contentDisposition = Resources.getSystem().getBoolean(com
-//                                .android.internal.R.bool.config_mms_content_disposition_support);
-                        boolean contentDisposition = false;
-
-                        if (contentDisposition) {
+                    	try {
                             int len = parseValueLength(pduDataStream);
                             pduDataStream.mark(1);
                             int thisStartPos = pduDataStream.available();
@@ -1702,8 +1693,10 @@ public class PduParser {
                             }
 
                             tempPos = pduDataStream.available();
-                            lastLen = length - (startPos - tempPos);
-                        }
+                            lastLen = length - (startPos - tempPos);                    		
+                    	} catch(Exception e) {
+                    		e.printStackTrace();
+                    	}
                         break;
                     default:
                         if (LOCAL_LOGV) {

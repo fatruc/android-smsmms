@@ -50,8 +50,8 @@ import com.google.android.mms.smil.SmilHelper;
 
 public class Transaction {
 
-	private Settings settings;
-	private Context context;
+	private Settings mSettings;
+	private Context mContext;
 
 	public String SMS_SENT = ".SMS_SENT";
 	public String SMS_DELIVERED = ".SMS_DELIVERED";
@@ -64,8 +64,8 @@ public class Transaction {
 	}
 
 	public Transaction(Context context, Settings settings) {
-		this.settings = settings;
-		this.context = context;
+		mSettings = settings;
+		mContext = context;
 
 		SMS_SENT = context.getPackageName() + SMS_SENT;
 		SMS_DELIVERED = context.getPackageName() + SMS_DELIVERED;
@@ -81,26 +81,26 @@ public class Transaction {
 
 	private Uri sendSmsMessage(String text, String address) {
 		// add signature to original text to be saved in database (does not strip unicode for saving though)
-		if (!settings.getSignature().equals(""))
-			text += "\n" + settings.getSignature();
+		if (!mSettings.getSignature().equals(""))
+			text += "\n" + mSettings.getSignature();
 
 		Calendar cal = Calendar.getInstance();
 
-		long threadId = Utils.getOrCreateThreadId(context, address);
-		Uri smsOutboxUri = Sms.Outbox.addMessage(context.getContentResolver(), address, settings.getStripUnicode() ? StripAccents.stripAccents(text) : text, "", cal.getTimeInMillis(), settings.getDeliveryReports(), threadId);
+		long threadId = Utils.getOrCreateThreadId(mContext, address);
+		Uri smsOutboxUri = Sms.Outbox.addMessage(mContext.getContentResolver(), address, mSettings.getStripUnicode() ? StripAccents.stripAccents(text) : text, "", cal.getTimeInMillis(), mSettings.getDeliveryReports(), threadId);
 		
-		PendingIntent sentPI = PendingIntent.getBroadcast(context, 0, new Intent(SMS_SENT).putExtra(SMS_OUTBOX_URI, smsOutboxUri), 0);
-		PendingIntent deliveredPI = PendingIntent.getBroadcast(context, 0, new Intent(SMS_DELIVERED).putExtra(SMS_OUTBOX_URI, smsOutboxUri), 0);
+		PendingIntent sentPI = PendingIntent.getBroadcast(mContext, 0, new Intent(SMS_SENT).putExtra(SMS_OUTBOX_URI, smsOutboxUri), 0);
+		PendingIntent deliveredPI = PendingIntent.getBroadcast(mContext, 0, new Intent(SMS_DELIVERED).putExtra(SMS_OUTBOX_URI, smsOutboxUri), 0);
 
 		ArrayList<PendingIntent> sPI = new ArrayList<PendingIntent>();
 		ArrayList<PendingIntent> dPI = new ArrayList<PendingIntent>();
 
 		// edit the body of the text if unicode needs to be stripped or signature needs to be added
-		if (settings.getStripUnicode())
+		if (mSettings.getStripUnicode())
 			text = StripAccents.stripAccents(text);
 
-		if (!settings.getPreText().equals(""))
-			text = settings.getPreText() + " " + text;
+		if (!mSettings.getPreText().equals(""))
+			text = mSettings.getPreText() + " " + text;
 
 		SmsManager smsManager = SmsManager.getDefault();
 	
@@ -108,10 +108,10 @@ public class Transaction {
 
 		for (int j = 0; j < parts.size(); j++) {
 			sPI.add(sentPI);
-			dPI.add(settings.getDeliveryReports() ? deliveredPI : null);
+			dPI.add(mSettings.getDeliveryReports() ? deliveredPI : null);
 		}
 		
-		if (settings.getSplit()) {
+		if (mSettings.getSplit()) {
 			for (String part : parts)
 				smsManager.sendTextMessage(address, null, part, sPI.get(0), dPI.get(0));
 		} else {
@@ -182,7 +182,7 @@ public class Transaction {
 			sendRequest.setSubject(new EncodedStringValue(subject));
 
 		sendRequest.setDate(Calendar.getInstance().getTimeInMillis() / 1000L);
-		sendRequest.setFrom(new EncodedStringValue(Utils.getMyPhoneNumber(context)));
+		sendRequest.setFrom(new EncodedStringValue(Utils.getMyPhoneNumber(mContext)));
 
 		final PduBody pduBody = new PduBody();
 
@@ -215,14 +215,14 @@ public class Transaction {
 		sendRequest.setBody(pduBody);
 
 		// create byte array which will actually be sent
-		final PduComposer composer = new PduComposer(context, sendRequest);
+		final PduComposer composer = new PduComposer(mContext, sendRequest);
 		final byte[] bytesToSend = composer.make();
 
 		MessageInfo info = new MessageInfo();
 		info.bytes = bytesToSend;
 
-		PduPersister persister = PduPersister.getPduPersister(context);
-		info.location = persister.persist(sendRequest, Telephony.Mms.Outbox.CONTENT_URI, true, settings.getGroup(), null);
+		PduPersister persister = PduPersister.getPduPersister(mContext);
+		info.location = persister.persist(sendRequest, Telephony.Mms.Outbox.CONTENT_URI, true, mSettings.getGroup(), null);
 
 		return info;
 	}
@@ -233,14 +233,14 @@ public class Transaction {
 	}
 
 	private void sendData(final byte[] bytesToSend) throws IOException, SocketException {
-		ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+		ConnectivityManager connectivityManager = (ConnectivityManager) mContext.getSystemService(Context.CONNECTIVITY_SERVICE);
 		NetworkInfo info = connectivityManager.getNetworkInfo(ConnectivityManager.TYPE_MOBILE_MMS);
-		TransactionSettings settings = new TransactionSettings(context, info.getExtraInfo());
+		TransactionSettings settings = new TransactionSettings(mContext, info.getExtraInfo());
 		Utils.ensureRouteToHost(settings.getMmscUrl(), settings, connectivityManager);
-		HttpUtils.httpConnection(context, 4444L, settings.getMmscUrl(), bytesToSend, HttpUtils.HTTP_GET_METHOD, settings.isProxySet(), settings.getProxyAddress(), settings.getProxyPort());
+		HttpUtils.httpConnection(mContext, 4444L, settings.getMmscUrl(), bytesToSend, HttpUtils.HTTP_GET_METHOD, settings.isProxySet(), settings.getProxyAddress(), settings.getProxyPort());
 	}
 
 	public boolean checkMMS(Message message) {
-		return message.getImages().length != 0 || (message.getMedia().length != 0 && message.getMediaMimeType() != null) || (settings.getSendLongAsMms() && Utils.getNumPages(settings, message.getText()) > settings.getSendLongAsMmsAfter()) || (message.getAddresses().length > 1 && settings.getGroup()) || message.getSubject() != null;
+		return message.getImages().length != 0 || (message.getMedia().length != 0 && message.getMediaMimeType() != null) || (mSettings.getSendLongAsMms() && Utils.getNumPages(mSettings, message.getText()) > mSettings.getSendLongAsMmsAfter()) || (message.getAddresses().length > 1 && mSettings.getGroup()) || message.getSubject() != null;
 	}
 }
