@@ -20,39 +20,22 @@ import android.content.BroadcastReceiver;
 import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
-import android.database.Cursor;
+import android.database.sqlite.SqliteWrapper;
 import android.net.Uri;
+import android.provider.Telephony.Sms;
 
 public class DeliveredReceiver extends BroadcastReceiver {
 	@Override
 	public void onReceive(Context context, Intent intent) {
+		Uri outboxUri = (Uri) intent.getParcelableExtra(Transaction.SMS_OUTBOX_URI);
+		if (outboxUri == null)
+			return;
 		switch (getResultCode()) {
 		case Activity.RESULT_OK:
-			Cursor query = context.getContentResolver().query(Uri.parse("content://sms/sent"), null, null, null, "date desc");
-			// mark message as delivered in database
-			if (query.moveToFirst()) {
-				String id = query.getString(query.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("status", "0");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/sent"), values, "_id=" + id, null);
-			}
-			query.close();
-			break;
-		case Activity.RESULT_CANCELED:
-			// notify user that message failed to be delivered
-			Cursor query2 = context.getContentResolver().query(Uri.parse("content://sms/sent"), null, null, null, "date desc");
-			// mark failed in database
-			if (query2.moveToFirst()) {
-				String id = query2.getString(query2.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("status", "64");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/sent"), values, "_id=" + id, null);
-			}
-			query2.close();
+			ContentValues values = new ContentValues();
+			values.put(Sms.STATUS, Sms.STATUS_COMPLETE);
+			SqliteWrapper.update(context, context.getContentResolver(), outboxUri, values, null, null);
 			break;
 		}
-		context.sendBroadcast(new Intent("com.klinker.android.send_message.REFRESH"));
 	}
 }

@@ -17,72 +17,29 @@ package com.klinker.android.send_message;
 
 import android.app.Activity;
 import android.content.BroadcastReceiver;
-import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
-import android.database.Cursor;
 import android.net.Uri;
+import android.provider.Telephony.Sms;
 import android.telephony.SmsManager;
 
 public class SentReceiver extends BroadcastReceiver {
 	@Override
 	public void onReceive(Context context, Intent intent) {
+		Uri outboxUri = (Uri) intent.getParcelableExtra(Transaction.SMS_OUTBOX_URI);
+		if (outboxUri == null)
+			return;
 		switch (getResultCode()) {
 		case Activity.RESULT_OK:
-			Cursor query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-			// mark message as sent successfully
-			if (query != null && query.moveToFirst()) {
-				String id = query.getString(query.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("type", "2");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-			}
-			query.close();
+			Sms.moveMessageToFolder(context, outboxUri, Sms.MESSAGE_TYPE_SENT, intent.getIntExtra("errorCode", 0));
 			break;
 		case SmsManager.RESULT_ERROR_GENERIC_FAILURE:
-			query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-			// mark message as failed and give notification to user to tell them
-			if (query != null && query.moveToFirst()) {
-				String id = query.getString(query.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("type", "5");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-			}
+			Sms.moveMessageToFolder(context, outboxUri, Sms.MESSAGE_TYPE_FAILED, intent.getIntExtra("errorCode", 0));
 			break;
 		case SmsManager.RESULT_ERROR_NO_SERVICE:
-			query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-			// mark message as failed
-			if (query != null && query.moveToFirst()) {
-				String id = query.getString(query.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("type", "5");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-			}
-			break;
 		case SmsManager.RESULT_ERROR_NULL_PDU:
-			query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-			// mark message failed
-			if (query != null && query.moveToFirst()) {
-				String id = query.getString(query.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("type", "5");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-			}
-			break;
 		case SmsManager.RESULT_ERROR_RADIO_OFF:
-			query = context.getContentResolver().query(Uri.parse("content://sms/outbox"), null, null, null, null);
-			// mark message failed
-			if (query != null && query.moveToFirst()) {
-				String id = query.getString(query.getColumnIndex("_id"));
-				ContentValues values = new ContentValues();
-				values.put("type", "5");
-				values.put("read", true);
-				context.getContentResolver().update(Uri.parse("content://sms/outbox"), values, "_id=" + id, null);
-			}
+			Sms.moveMessageToFolder(context, outboxUri, Sms.MESSAGE_TYPE_QUEUED, intent.getIntExtra("errorCode", 0));
 			break;
 		}
 	}
